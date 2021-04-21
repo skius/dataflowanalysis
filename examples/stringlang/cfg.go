@@ -17,7 +17,7 @@ type counter struct {
 	next int
 }
 
-func New(prog *ast.Program) (*Node, map[int]*Node) {
+func NewCFG(prog *ast.Program) (*Node, map[int]*Node) {
 	code := prog.Code
 	ctr := new(counter)
 	idToNode := make(map[int]*Node)
@@ -86,7 +86,11 @@ func newFromBlock(block ast.Block, parents []*Node, ctr *counter, branch bool, i
 					prevs[i].fallThrough = check
 				}
 			}
-			prevs = branchExits
+			for _, n := range branchExits {
+				check.parents = append(check.parents, n)
+				n.fallThrough = check
+			}
+			prevs = []*Node{check}
 		} else {
 			n := buildNode(expr, ctr)
 			idToNode[n.label] = n

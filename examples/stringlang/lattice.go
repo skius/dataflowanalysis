@@ -22,14 +22,14 @@ type AbsString struct {
 	Constant string
 }
 
-func (e *AbsString) IsTop() bool {
-	return e.Type == TypeTop
+func (s *AbsString) IsTop() bool {
+	return s.Type == TypeTop
 }
-func (e *AbsString) IsBottom() bool {
-	return e.Type == TypeBottom
+func (s *AbsString) IsBottom() bool {
+	return s.Type == TypeBottom
 }
-func (e *AbsString) IsConstant() bool {
-	return e.Type == TypeConst
+func (s *AbsString) IsConstant() bool {
+	return s.Type == TypeConst
 }
 
 func Bottom() *AbsString {
@@ -49,63 +49,63 @@ func Constant(s string) *AbsString {
 	return c
 }
 
-func (e *AbsString) Meet(other *AbsString) *AbsString {
-	if e.IsTop() {
+func (s *AbsString) Meet(other *AbsString) *AbsString {
+	if s.IsTop() {
 		return other.copy()
 	}
 	if other.IsTop() {
-		return e.copy()
+		return s.copy()
 	}
-	if e.IsBottom() || other.IsBottom() {
-		return e.copy()
+	if s.IsBottom() || other.IsBottom() {
+		return s.copy()
 	}
-	if e.IsConstant() && other.IsConstant() && e.Constant == other.Constant {
-		return e.copy()
+	if s.IsConstant() && other.IsConstant() && s.Constant == other.Constant {
+		return s.copy()
 	}
 	return Bottom()
 }
-func (e *AbsString) Join(other *AbsString) *AbsString {
-	if e.IsBottom() {
+func (s *AbsString) Join(other *AbsString) *AbsString {
+	if s.IsBottom() {
 		return other.copy()
 	}
 	if other.IsBottom() {
-		return e.copy()
+		return s.copy()
 	}
-	if e.IsTop() || other.IsTop() {
-		return e.copy()
+	if s.IsTop() || other.IsTop() {
+		return s.copy()
 	}
-	if e.IsConstant() && other.IsConstant() && e.Constant == other.Constant {
-		return e.copy()
+	if s.IsConstant() && other.IsConstant() && s.Constant == other.Constant {
+		return s.copy()
 	}
 	return Top()
 }
 
-func (e *AbsString) Equals(other *AbsString) bool {
-	if e.IsBottom() && other.IsBottom() {
+func (s *AbsString) Equals(other *AbsString) bool {
+	if s.IsBottom() && other.IsBottom() {
 		return true
 	}
-	if e.IsTop() && other.IsTop() {
+	if s.IsTop() && other.IsTop() {
 		return true
 	}
-	if e.IsConstant() && other.IsConstant() {
-		return e.Constant == other.Constant
+	if s.IsConstant() && other.IsConstant() {
+		return s.Constant == other.Constant
 	}
 	return false
 }
 
-func (e *AbsString) String() string {
-	if e.IsTop() {
-		return "<Top>"
+func (s *AbsString) String() string {
+	if s.IsTop() {
+		return "<Top>" // "⊤" //
 	}
-	if e.IsBottom() {
-		return "<Bottom>"
+	if s.IsBottom() {
+		return "<Bottom>" // "⊥" //
 	}
-	return `"`+ e.Constant +`"`
+	return `"`+ s.Constant +`"`
 }
 
-func (e *AbsString) copy() *AbsString {
+func (s *AbsString) copy() *AbsString {
 	e2 := new(AbsString)
-	e2.Constant = e.Constant
-	e2.Type = e.Type
+	e2.Constant = s.Constant
+	e2.Type = s.Type
 	return e2
 }

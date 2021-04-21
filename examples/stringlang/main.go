@@ -6,6 +6,7 @@ import (
 	"github.com/skius/stringlang/ast"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strings"
 )
 import "github.com/skius/stringlang"
@@ -59,7 +60,7 @@ func main() {
 	fmt.Println(res)
 
 	prog := expr.(ast.Program)
-	head, idToNode := New(&prog)
+	head, idToNode := NewCFG(&prog)
 
 	ids := make([]int, 0, len(idToNode))
 	for k := range idToNode {
@@ -69,7 +70,7 @@ func main() {
 	merge := func(am1F, am2F dfa.Fact) dfa.Fact {
 		am1 := am1F.(AbstractMap)
 		am2 := am2F.(AbstractMap)
-		return am1.Meet(am2)
+		return am1.Join(am2)
 	}
 
 	vars := getAllVars(prog)
@@ -80,47 +81,92 @@ func main() {
 	}
 
 	initial := make(AbstractMap)
-	for _, variable := range vars {
-		initial[variable] = Bottom()
-	}
+	// Bottom element
+	//for _, variable := range vars {
+	//	initial[variable] = Bottom()
+	//}
 
 	entry := make(AbstractMap)
 	for _, variable := range vars {
-		entry[variable] = Top()
+		entry[variable] = Bottom()
 	}
 
 	flow := func(amF dfa.Fact, nodeF dfa.Node) (fallThrough, branchOut dfa.Fact) {
-		am := amF.(AbstractMap)
-		node := nodeF.(*Node)
-		fmt.Println("Flowing through expr ", node.expr.String())
-		if node.label == head.label {
-			// entry flow
-			fmt.Println("entry!")
-			return entry, entry
+		am := amF.(AbstractMap).copy()
+		if am.IsBottom() {
+			// If this node is unreachable, its children might also be
+			return am, am
 		}
+		node := nodeF.(*Node)
+		expr := node.expr.(ast.Expr)
+		if node.BranchOut() < 0 {
+			// We are not in a branch
+			switch val := expr.(type) {
+			case ast.Assn: // The only non-branching node that changes flow is an assignment
+				variable := string(val.V)
+				am[variable] = transform(am, val.E)
+			}
+			return am, nil
+		}
+
+		// We're in a branching node
+
+		switch val := expr.(type) {
+		// TODO: Move these two and other booleans to transform (which returns "true" like stringlang)
+		// then check here simply isTruthyVal(transform(am, expr))
+		case ast.Equals:
+			left := transform(am, val.A)
+			right := transform(am, val.B)
+			if left.IsConstant() && right.IsConstant() {
+				if left.Constant == right.Constant {
+					// This is a valid statement, branchOut always taken, fallThrough never
+					return initial.copy(), am
+				} else {
+					// This is an invalid statement, fallThrough always taken, branchOut never
+					return am, initial.copy()
+				}
+			}
+		case ast.NotEquals:
+			left := transform(am, val.A)
+			right := transform(am, val.B)
+			if left.IsConstant() && right.IsConstant() {
+				if left.Constant != right.Constant {
+					// This is a valid statement, branchOut always taken, fallThrough never
+					return initial.copy(), am
+				} else {
+					// This is an invalid statement, fallThrough always, branchOut never
+					return am, initial.copy()
+				}
+			}
+		}
+		// Otherwise no information
 		return am, am
 	}
 
+	sort.Ints(ids)
+
 	facts := dfa.RunAnalysis(
-			head,
+			head.label,
 			idToNodeGeneral,
 			ids,
 			merge,
 			flow,
-			initial,
+			initial.copy(),
+			entry.copy(),
 		)
 
-	for id, factF := range facts {
+	for _, id := range ids {
+		factF := facts[id]
 		fact := factF.(AbstractMap)
 		node := idToNode[id]
 		fmt.Println()
-		fmt.Println("Fact before node label=", node.label, " and expr=", node.expr.String())
 		fmt.Println(fact)
+		fmt.Println(node.label, ": ", node.expr.String())
 	}
 
 	//fmt.Println()
 	//prog := expr.(ast.Program)
-	//head := New(&prog)
+	//head := NewCFG(&prog)
 	//fmt.Println(head)
 	//fmt.Println()
 	//fmt.Println()

@@ -2,6 +2,24 @@ package main
 
 import "github.com/skius/stringlang/ast"
 
+// isTruthyVal returns
+// 1 is s is truthy
+// 0 if we don't know
+// -1 if s is falsy
+func isTruthyVal(s *AbsString) int {
+	if s.IsBottom() {
+		return -1
+	}
+	if s.IsTop() {
+		return 0
+	}
+
+	if s.Constant == "" || s.Constant == "false" {
+		return -1
+	}
+	return 1
+}
+
 func getAllVars(p ast.Program) []string {
 	seen := make(map[string]bool)
 	setVarSeen(p, seen)

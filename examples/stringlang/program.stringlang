@@ -8,8 +8,23 @@ if (b == c) {
     a = a + "\n" + "b not equals c!"
 };
 if (b == "I'm constant.") {
-    a = a + "\n" + "This branch is always taken"
+    a = a + "\n" + "This branch is always taken";
+    b = b + " Still!"
 } else {
-    a = a + "\n" + "Unreachable code."
+    a = a + "\n" + "Unreachable code.";
+    if ("true") {
+        b = b + b
+    } else {
+        c = b
+    };
+    b = b + a /* if a is Top, b will also be Top */
 };
+d = "I will not be constant";
+while (d != "I will not be constantrrr") {
+    d = d + "r"
+};
+constantWorld = "Hello World!";
+constantIndex = constantWorld["6"];
+imAlsoConstant = "yes";
+imAlsoConstant = imAlsoConstant + someUninitializedVariable;
 a

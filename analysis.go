@@ -19,28 +19,31 @@ type Stmt interface{}
 // Fact is a dataflow fact
 type Fact interface {
 	Equals(Fact) bool
+	String() string
 }
 
 type ForwardAnalysis struct {
 }
 
 func RunAnalysis(
-	entry Node,
+	entryId int,
 	idToNode map[int]Node,
 	ids []int,
 	merge func(Fact, Fact) Fact, // Meet operator
 	flow func(Fact, Node) (Fact, Fact), // Flow function
 	initialFlow Fact,
+	entryFlow Fact,
 ) map[int]Fact {
+
 	fmt.Println("running analysis...")
-	facts := make(map[int]Fact)
-	incomingFacts := make(map[int][]Fact)
-	branchOutFacts := make(map[int]Fact)
-	fallThroughFacts := make(map[int]Fact)
+	facts := make(map[int]Fact) // the facts before each node
+	incomingFacts := make(map[int]map[int]Fact) // incomingFacts[id1][p1] is the fact coming to id1 from p1
+	branchOutFacts := make(map[int]Fact) // keeps track of previous facts to detect changes in flow
+	fallThroughFacts := make(map[int]Fact) // keeps track of previous facts to detect changes in flow
 
 	for _, id := range ids {
 		facts[id] = initialFlow
-		incomingFacts[id] = []Fact{}
+		incomingFacts[id] = make(map[int]Fact)
 		branchOutFacts[id] = initialFlow
 		fallThroughFacts[id] = initialFlow
 
@@ -48,39 +51,68 @@ func RunAnalysis(
 
 
 
-	worklist := make([]int, len(ids))
-	copy(worklist, ids)
+	worklist := make(map[int]interface{}, len(ids))
+	for _, id := range ids {
+		worklist[id] = struct {}{}
+	}
 
 	fmt.Println("length of worklist:", len(worklist))
 
 	for len(worklist) > 0 {
-		nodeToProcessId := worklist[0]
-		worklist = worklist[1:]
+		var nodeToProcessId int
+		for k := range worklist {
+			nodeToProcessId = k
+			break
+		}
+		delete(worklist, nodeToProcessId)
 		nodeToProcess := idToNode[nodeToProcessId]
 
-		fallThrough, branchOut := flow(facts[nodeToProcessId], nodeToProcess)
+		fmt.Println("Processing label = ", nodeToProcessId)
+		fmt.Println("incoming facts:")
+		for _, f := range incomingFacts[nodeToProcessId] {
+			fmt.Println(f.String())
+		}
+
+		var fact Fact
+		if nodeToProcessId == entryId {
+			fact = entryFlow
+		} else {
+			ins := make([]Fact, 0, len(incomingFacts[nodeToProcessId]))
+			for _, v := range incomingFacts[nodeToProcessId] {
+				ins = append(ins, v)
+			}
+			fact = mergeAll(merge, ins, initialFlow)
+		}
+		facts[nodeToProcessId] = fact
+
+		fallThrough, branchOut := flow(fact, nodeToProcess)
 		fallThroughId := nodeToProcess.FallThrough()
 		branchOutId := nodeToProcess.BranchOut()
 
 		if fallThroughId >= 0 {
 			// Has FallThrough, else we can just ignore
-			prevFallThrough := facts[nodeToProcess.FallThrough()]
+			prevFallThrough := fallThroughFacts[nodeToProcessId]
 
 			if !fallThrough.Equals(prevFallThrough) {
 				// Flow to FallThrough changed, add it to worklist
-				worklist = append(worklist, nodeToProcess.FallThrough())
-				facts[nodeToProcess.FallThrough()] = merge(fallThrough, prevFallThrough)
+				fmt.Println()
+				fmt.Println("Fallthrough of label=", nodeToProcessId, " was: ", prevFallThrough.String())
+				fmt.Println("is now: ", fallThrough.String())
+				worklist[fallThroughId] = struct {}{}
+				fallThroughFacts[nodeToProcessId] = fallThrough
+				incomingFacts[fallThroughId][nodeToProcessId] = fallThrough
 			}
 		}
 
 		if branchOutId >= 0 {
 			// Has BranchOut, else we can just ignore
-			prevBranchOut := facts[nodeToProcess.BranchOut()]
+			prevBranchOut := branchOutFacts[nodeToProcessId]
 
 			if !branchOut.Equals(prevBranchOut) {
 				// Flow to BranchOut changed, add it to worklist
-				worklist = append(worklist, nodeToProcess.BranchOut())
-				facts[nodeToProcess.BranchOut()] = merge(branchOut, prevBranchOut)
+				worklist[branchOutId] = struct {}{}
+				branchOutFacts[nodeToProcessId] = branchOut
+				incomingFacts[branchOutId][nodeToProcessId] = branchOut
 			}
 		}
 
@@ -111,9 +143,6 @@ func RunAnalysis(
 func mergeAll(merge func(Fact, Fact) Fact, facts []Fact, initial Fact) Fact {
 	if len(facts) == 0 {
 		return initial
-	}
-	if len(facts) == 1 {
-		return facts[0]
 	}
 
 	fact := facts[0]
