@@ -1,0 +1,4 @@
+github.com/skius/stringlang v0.4.0 h1:90ccvKwuAm0d8rUdlgtFQhXQl53eP4VeBS3LdgTs9W0=
+github.com/skius/stringlang v0.4.0/go.mod h1:sZYOUq4LoUrcAneNzlGjXpdb/ZDqd+Lx3zWpTgMooRQ=
+golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/term v0.0.0-20210406210042-72f3dc4e9b72/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=

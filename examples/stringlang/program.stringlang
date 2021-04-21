@@ -1,0 +1,15 @@
+a = "I will live through to the end";
+notLive = "I'm not live after this line";
+b = "I'm constant.";
+c = %0;
+if (b == c) {
+    a = a + "\n" + "b equals c!"
+} else {
+    a = a + "\n" + "b not equals c!"
+};
+if (b == "I'm constant.") {
+    a = a + "\n" + "This branch is always taken"
+} else {
+    a = a + "\n" + "Unreachable code."
+};
+a
