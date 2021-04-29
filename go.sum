@@ -1,4 +1,8 @@
+github.com/awalterschulze/gographviz v2.0.3+incompatible h1:9sVEXJBJLwGX7EQVhLm2elIKCm7P2YHFC8v6096G09E=
+github.com/awalterschulze/gographviz v2.0.3+incompatible/go.mod h1:GEV5wmg4YquNw7v1kkyoX9etIk8yVmXj+AkDHuuETHs=
 github.com/skius/stringlang v0.4.0 h1:90ccvKwuAm0d8rUdlgtFQhXQl53eP4VeBS3LdgTs9W0=
 github.com/skius/stringlang v0.4.0/go.mod h1:sZYOUq4LoUrcAneNzlGjXpdb/ZDqd+Lx3zWpTgMooRQ=
+github.com/skius/stringlang v0.4.1-0.20210428173909-210ecc853c3c h1:gxH+uQ/ruLuuUZzRXx7m1H6ahu+U37CUXYDAawApEG0=
+github.com/skius/stringlang v0.4.1-0.20210428173909-210ecc853c3c/go.mod h1:8ZFAp4orA5qe/aYTDbZDepvgYRe4bBz1NQOkHYQcPUY=
 golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/term v0.0.0-20210406210042-72f3dc4e9b72/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=

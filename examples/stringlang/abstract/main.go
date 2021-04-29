@@ -4,6 +4,8 @@ import (
 	"fmt"
 	dfa "github.com/skius/dataflowanalysis"
 	"github.com/skius/stringlang/ast"
+	"github.com/skius/stringlang/cfg"
+	"github.com/skius/stringlang/optimizer"
 	"io/ioutil"
 	"os"
 	"sort"
@@ -11,36 +13,49 @@ import (
 )
 import "github.com/skius/stringlang"
 
-func (n *Node) Label() int {
-	return n.label
+
+type Node struct {
+	inner *cfg.Node
 }
 
-func (n *Node) Preds() []int {
-	preds := make([]int, len(n.parents))
-	for i, p := range n.parents {
-		preds[i] = p.label
+func (n *Node) Label() int {
+	return n.inner.Label
+}
+
+func (n *Node) PredsNotTaken() []int {
+	preds := make([]int, len(n.inner.PredsNotTaken))
+	for i, p := range n.inner.PredsNotTaken {
+		preds[i] = p.Label
 	}
 	return preds
 }
 
-func (n *Node) BranchOut() int {
-	if n.branchOut == nil {
-		return -1
+func (n *Node) PredsTaken() []int {
+	preds := make([]int, len(n.inner.PredsTaken))
+	for i, p := range n.inner.PredsTaken {
+		preds[i] = p.Label
 	}
-
-	return n.branchOut.label
+	return preds
 }
 
-func (n *Node) FallThrough() int {
-	if n.fallThrough == nil {
-		return -1
+func (n *Node) SuccsNotTaken() []int {
+	if n.inner.SuccNotTaken == nil {
+		return []int{}
 	}
 
-	return n.fallThrough.label
+	return []int{n.inner.SuccNotTaken.Label}
+}
+
+func (n *Node) SuccsTaken() []int {
+	if n.inner.SuccTaken == nil {
+		return []int{}
+	}
+
+	return []int{n.inner.SuccTaken.Label}
 }
 
 func (n *Node) Get() dfa.Stmt {
-	return n.expr
+	return n.inner.Expr
 }
 
 func main() {
@@ -60,12 +75,19 @@ func main() {
 	fmt.Println(res)
 
 	prog := expr.(ast.Program)
-	head, idToNode := NewCFG(&prog)
+	prog = optimizer.Normalize(prog)
+	graph, _ := cfg.New(prog)
 
-	ids := make([]int, 0, len(idToNode))
-	for k := range idToNode {
-		ids = append(ids, k)
-	}
+	ids := make([]int, 0)
+	idToNode := make(map[int]dfa.Node)
+
+	graph.Visit(func(node *cfg.Node) {
+		ids = append(ids, node.Label)
+
+		dfaNode := new(Node)
+		dfaNode.inner = node
+		idToNode[node.Label] = dfaNode
+	})
 
 	merge := func(am1F, am2F dfa.Fact) dfa.Fact {
 		am1 := am1F.(AbstractMap)
@@ -75,13 +97,9 @@ func main() {
 
 	vars := getAllVars(prog)
 
-	idToNodeGeneral := make(map[int]dfa.Node, len(idToNode))
-	for k, v := range idToNode {
-		idToNodeGeneral[k] = v
-	}
 
 	initial := make(AbstractMap)
-	// Bottom element
+	//Bottom element
 	//for _, variable := range vars {
 	//	initial[variable] = Bottom()
 	//}
@@ -98,8 +116,8 @@ func main() {
 			return am, am
 		}
 		node := nodeF.(*Node)
-		expr := node.expr.(ast.Expr)
-		if node.BranchOut() < 0 {
+		expr := node.inner.Expr
+		if len(node.SuccsTaken()) == 0 {
 			// We are not in a branch
 			switch val := expr.(type) {
 			case ast.Assn: // The only non-branching node that changes flow is an assignment
@@ -145,23 +163,24 @@ func main() {
 
 	sort.Ints(ids)
 
-	facts := dfa.RunAnalysis(
-			head.label,
-			idToNodeGeneral,
-			ids,
-			merge,
-			flow,
-			initial.copy(),
-			entry.copy(),
-		)
+	in, _, _ := dfa.RunForward(
+		[]int{graph.Entry.Label},
+		ids,
+		idToNode,
+		merge,
+		flow,
+		initial.copy(),
+		entry.copy(),
+	)
 
 	for _, id := range ids {
-		factF := facts[id]
+		factF := in[id]
 		fact := factF.(AbstractMap)
-		node := idToNode[id]
+		nodeF := idToNode[id]
+		node := nodeF.(*Node)
 		fmt.Println()
 		fmt.Println(fact)
-		fmt.Println(node.label, ": ", node.expr.String())
+		fmt.Println(node.Label(), ": ", node.inner.Expr.String())
 	}
 
 	//fmt.Println()
@@ -173,19 +192,19 @@ func main() {
 	//run(head)
 }
 
-func run(n *Node) {
-	if n == nil {
-		return
-	}
-	fmt.Println()
-	fmt.Println("Visiting node label: ", n.label)
-	fmt.Println("expr: ", n.expr.String())
-	fmt.Println("FallThrough: ", n.fallThrough)
-	fmt.Println("BranchOut: ", n.branchOut)
-	fmt.Println("Parents:")
-	for _, p := range n.parents {
-		fmt.Println("Parent: label=", p.label, " string=", p.expr.String())
-	}
-	run(n.fallThrough)
-	run(n.branchOut)
-}
+//func run(n *Node) {
+//	if n == nil {
+//		return
+//	}
+//	fmt.Println()
+//	fmt.Println("Visiting node label: ", n.label)
+//	fmt.Println("expr: ", n.expr.String())
+//	fmt.Println("FallThrough: ", n.fallThrough)
+//	fmt.Println("BranchOut: ", n.branchOut)
+//	fmt.Println("Parents:")
+//	for _, p := range n.parents {
+//		fmt.Println("Parent: label=", p.label, " string=", p.expr.String())
+//	}
+//	run(n.fallThrough)
+//	run(n.branchOut)
+//}

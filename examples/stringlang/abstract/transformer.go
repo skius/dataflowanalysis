@@ -30,8 +30,6 @@ func (s *AbsString) Index(idx *AbsString) *AbsString {
 		return Top()
 	}
 
-
-
 	// Both are constant
 	i, err := strconv.Atoi(idx.forceEval())
 	if err != nil {
@@ -52,8 +50,6 @@ func (s *AbsString) Concat(other *AbsString) *AbsString {
 	a := s.forceEval()
 	b := other.forceEval()
 	return Constant(a + b)
-
-
 
 	//a := "" // StringLang semantics
 	//if s.IsConstant() {

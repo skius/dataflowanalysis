@@ -25,7 +25,7 @@ func (am AbstractMap) Meet(other AbstractMap) AbstractMap {
 
 	res := make(AbstractMap)
 	for k, v := range other {
-		res[k] =  am.Get(k).Meet(v)
+		res[k] = am.Get(k).Meet(v)
 	}
 	for k, v := range am {
 		res[k] = other.Get(k).Meet(v)
@@ -46,14 +46,13 @@ func (am AbstractMap) Join(other AbstractMap) AbstractMap {
 
 	res := make(map[string]*AbsString)
 	for k, v := range other {
-		res[k] =  am.Get(k).Join(v)
+		res[k] = am.Get(k).Join(v)
 	}
 	for k, v := range am {
 		res[k] = other.Get(k).Join(v)
 	}
 	return res
 }
-
 
 func (am AbstractMap) Equals(otherF dfa.Fact) bool {
 	other := otherF.(AbstractMap)
@@ -97,7 +96,7 @@ func (am AbstractMap) String() string {
 	mappings := make([]string, 0, len(am))
 	for _, variable := range variables {
 		abs := am[variable]
-		mappings = append(mappings, variable + "=" + abs.String())
+		mappings = append(mappings, variable+"="+abs.String())
 	}
 	return "{ " + strings.Join(mappings, ", ") + " }"
 }

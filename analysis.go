@@ -1,15 +1,12 @@
 package dataflowanalysis
 
-import (
-	"fmt"
-)
-
 // Node represents the dataflow CFG
 type Node interface {
 	Label() int
-	Preds() []int   // Predecessors' ids
-	BranchOut() int   // Successor's id if some conditional branch is taken
-	FallThrough() int // Regular successor's id
+	PredsTaken() []int    // Predecessors that branch out to the current Node
+	PredsNotTaken() []int // Predecessors that fall through to the current Node
+	SuccsTaken() []int    // Successors if current Node branches out
+	SuccsNotTaken() []int // Successors if current Node falls through
 	Get() Stmt
 }
 
@@ -22,123 +19,234 @@ type Fact interface {
 	String() string
 }
 
-type ForwardAnalysis struct {
-}
-
-func RunAnalysis(
-	entryId int,
-	idToNode map[int]Node,
+// A branched backward flow doesn't make much sense
+func RunBackward(
+	entryIds []int, // entryIds don't make much sense I think
 	ids []int,
+	idToNode map[int]Node,
 	merge func(Fact, Fact) Fact, // Meet operator
 	flow func(Fact, Node) (Fact, Fact), // Flow function
 	initialFlow Fact,
 	entryFlow Fact,
-) map[int]Fact {
+) (in, out map[int]Fact) {
 
-	fmt.Println("running analysis...")
-	facts := make(map[int]Fact) // the facts before each node
-	incomingFacts := make(map[int]map[int]Fact) // incomingFacts[id1][p1] is the fact coming to id1 from p1
-	branchOutFacts := make(map[int]Fact) // keeps track of previous facts to detect changes in flow
-	fallThroughFacts := make(map[int]Fact) // keeps track of previous facts to detect changes in flow
 
-	for _, id := range ids {
-		facts[id] = initialFlow
-		incomingFacts[id] = make(map[int]Fact)
-		branchOutFacts[id] = initialFlow
-		fallThroughFacts[id] = initialFlow
-
+	idToNodeReverse := make(map[int]Node, len(idToNode))
+	for k, v := range idToNode {
+		rev := new(reverseNode)
+		rev.actualNode = v
+		idToNodeReverse[k] = rev
 	}
 
-
-
-	worklist := make(map[int]interface{}, len(ids))
-	for _, id := range ids {
-		worklist[id] = struct {}{}
+	// Need to convert our reverse nodes into the real nodes such that the flow function is not exposed to reverseNode
+	revFlow := func(f Fact, node Node) (Fact, Fact) {
+		revNode := node.(*reverseNode)
+		actualNode := revNode.actualNode
+		return flow(f, actualNode)
 	}
 
-	fmt.Println("length of worklist:", len(worklist))
+	// ignore outTaken, because our flow is path insensitive
+	revIn, revOutNotTaken, _ := RunForward(entryIds, ids, idToNodeReverse, merge, revFlow, initialFlow, entryFlow)
+
+	return revOutNotTaken, revIn
+}
+
+// RunForward computes path-sensitive forward data-flow analysis
+func RunForward(
+	entryIds []int,
+	ids []int,
+	idToNode map[int]Node,
+	merge func(Fact, Fact) Fact, // Meet operator
+	flow func(Fact, Node) (Fact, Fact), // Flow function
+	initialFlow Fact,
+	entryFlow Fact,
+) (in, outNotTaken, outTaken map[int]Fact) {
+	// The number of nodes we are working with
+	n := len(ids)
+
+	// The in and out sets for each node
+	in = make(map[int]Fact, n)
+	outNotTaken = make(map[int]Fact, n)
+	outTaken = make(map[int]Fact, n)
+
+	// map instead of set to avoid adding duplicates
+	worklist := make(map[int]struct{}, n)
+
+	isEntry := make(map[int]bool)
+
+	for _, id := range ids {
+		in[id] = initialFlow
+		outNotTaken[id] = initialFlow
+		outTaken[id] = initialFlow
+
+		worklist[id] = struct{}{}
+	}
+
+	for _, id := range entryIds {
+		in[id] = entryFlow
+		isEntry[id] = true
+	}
 
 	for len(worklist) > 0 {
-		var nodeToProcessId int
+		var currNodeId int
 		for k := range worklist {
-			nodeToProcessId = k
+			currNodeId = k
 			break
 		}
-		delete(worklist, nodeToProcessId)
-		nodeToProcess := idToNode[nodeToProcessId]
+		delete(worklist, currNodeId)
 
-		fmt.Println("Processing label = ", nodeToProcessId)
-		fmt.Println("incoming facts:")
-		for _, f := range incomingFacts[nodeToProcessId] {
-			fmt.Println(f.String())
+		currNode := idToNode[currNodeId]
+
+		inFacts := make([]Fact, 0, len(currNode.PredsNotTaken()) + len(currNode.PredsTaken()) + 1)
+		for _, pred := range currNode.PredsNotTaken() {
+			inFacts = append(inFacts, outNotTaken[pred])
+		}
+		for _, pred := range currNode.PredsTaken() {
+			inFacts = append(inFacts, outTaken[pred])
 		}
 
-		var fact Fact
-		if nodeToProcessId == entryId {
-			fact = entryFlow
-		} else {
-			ins := make([]Fact, 0, len(incomingFacts[nodeToProcessId]))
-			for _, v := range incomingFacts[nodeToProcessId] {
-				ins = append(ins, v)
+		if isEntry[currNodeId] {
+			inFacts = append(inFacts, entryFlow)
+		}
+
+		inFact := mergeAll(merge, inFacts, initialFlow)
+
+		in[currNodeId] = inFact
+		outNotTakenFact, outTakenFact := flow(inFact, currNode)
+
+		if outNotTakenFact != nil && !outNotTakenFact.Equals(outNotTaken[currNodeId]) {
+			// Flow changed, add successors
+			for _, succ := range currNode.SuccsNotTaken() {
+				worklist[succ] = struct{}{}
 			}
-			fact = mergeAll(merge, ins, initialFlow)
+
+			outNotTaken[currNodeId] = outNotTakenFact
 		}
-		facts[nodeToProcessId] = fact
 
-		fallThrough, branchOut := flow(fact, nodeToProcess)
-		fallThroughId := nodeToProcess.FallThrough()
-		branchOutId := nodeToProcess.BranchOut()
-
-		if fallThroughId >= 0 {
-			// Has FallThrough, else we can just ignore
-			prevFallThrough := fallThroughFacts[nodeToProcessId]
-
-			if !fallThrough.Equals(prevFallThrough) {
-				// Flow to FallThrough changed, add it to worklist
-				fmt.Println()
-				fmt.Println("Fallthrough of label=", nodeToProcessId, " was: ", prevFallThrough.String())
-				fmt.Println("is now: ", fallThrough.String())
-				worklist[fallThroughId] = struct {}{}
-				fallThroughFacts[nodeToProcessId] = fallThrough
-				incomingFacts[fallThroughId][nodeToProcessId] = fallThrough
+		if outTakenFact != nil && !outTakenFact.Equals(outTaken[currNodeId]) {
+			// Flow changed, add successors
+			for _, succ := range currNode.SuccsTaken() {
+				worklist[succ] = struct{}{}
 			}
+
+			outTaken[currNodeId] = outTakenFact
 		}
-
-		if branchOutId >= 0 {
-			// Has BranchOut, else we can just ignore
-			prevBranchOut := branchOutFacts[nodeToProcessId]
-
-			if !branchOut.Equals(prevBranchOut) {
-				// Flow to BranchOut changed, add it to worklist
-				worklist[branchOutId] = struct {}{}
-				branchOutFacts[nodeToProcessId] = branchOut
-				incomingFacts[branchOutId][nodeToProcessId] = branchOut
-			}
-		}
-
-
-		//preds := nodeToProcess.Parents()
-		//inFacts := make([]Fact, 0, len(preds))
-		//for _, pred := range preds {
-		//	inFacts = append(inFacts, facts[pred])
-		//}
-		//
-		//inFact := mergeAll(merge, inFacts, initialFlow)
-		//fallThrough, branchOut := flow(inFact, nodeToProcess)
-		//prevFallThrough := facts[nodeToProcess.FallThrough()]
-		//prevBranchOut := facts[nodeToProcess.BranchOut()]
-		//if !branchOut.Equals(prevBranchOut) {
-		//	// Flow to BranchOut changed, add it to worklist
-		//	worklist = append(worklist, nodeToProcess.BranchOut())
-		//}
-		//if !fallThrough.Equals(prevFallThrough) {
-		//	// Flow to FallThrough changed, add it to worklist
-		//	worklist = append(worklist, nodeToProcess.FallThrough())
-		//}
-		//facts[nodeToProcessId] = inFact
 	}
-	return facts
+
+	return in, outNotTaken, outTaken
 }
+
+//func RunAnalysis(
+//	entryId int,
+//	idToNode map[int]Node,
+//	ids []int,
+//	merge func(Fact, Fact) Fact, // Meet operator
+//	flow func(Fact, Node) (Fact, Fact), // Flow function
+//	initialFlow Fact,
+//	entryFlow Fact,
+//) map[int]Fact {
+//
+//	fmt.Println("running analysis...")
+//	facts := make(map[int]Fact)                 // the facts before each node
+//	incomingFacts := make(map[int]map[int]Fact) // incomingFacts[id1][p1] is the fact coming to id1 from p1
+//	branchOutFacts := make(map[int]Fact)        // keeps track of previous facts to detect changes in flow
+//	fallThroughFacts := make(map[int]Fact)      // keeps track of previous facts to detect changes in flow
+//
+//	for _, id := range ids {
+//		facts[id] = initialFlow
+//		incomingFacts[id] = make(map[int]Fact)
+//		branchOutFacts[id] = initialFlow
+//		fallThroughFacts[id] = initialFlow
+//
+//	}
+//
+//	worklist := make(map[int]interface{}, len(ids))
+//	for _, id := range ids {
+//		worklist[id] = struct{}{}
+//	}
+//
+//	fmt.Println("length of worklist:", len(worklist))
+//
+//	for len(worklist) > 0 {
+//		var nodeToProcessId int
+//		for k := range worklist {
+//			nodeToProcessId = k
+//			break
+//		}
+//		delete(worklist, nodeToProcessId)
+//		nodeToProcess := idToNode[nodeToProcessId]
+//
+//		fmt.Println("Processing label = ", nodeToProcessId)
+//		fmt.Println("incoming facts:")
+//		for _, f := range incomingFacts[nodeToProcessId] {
+//			fmt.Println(f.String())
+//		}
+//
+//		var fact Fact
+//		if nodeToProcessId == entryId {
+//			fact = entryFlow
+//		} else {
+//			ins := make([]Fact, 0, len(incomingFacts[nodeToProcessId]))
+//			for _, v := range incomingFacts[nodeToProcessId] {
+//				ins = append(ins, v)
+//			}
+//			fact = mergeAll(merge, ins, initialFlow)
+//		}
+//		facts[nodeToProcessId] = fact
+//
+//		fallThrough, branchOut := flow(fact, nodeToProcess)
+//		fallThroughId := nodeToProcess.FallThrough()
+//		branchOutId := nodeToProcess.BranchOut()
+//
+//		if fallThroughId >= 0 {
+//			// Has FallThrough, else we can just ignore
+//			prevFallThrough := fallThroughFacts[nodeToProcessId]
+//
+//			if !fallThrough.Equals(prevFallThrough) {
+//				// Flow to FallThrough changed, add it to worklist
+//				fmt.Println()
+//				fmt.Println("Fallthrough of label=", nodeToProcessId, " was: ", prevFallThrough.String())
+//				fmt.Println("is now: ", fallThrough.String())
+//				worklist[fallThroughId] = struct{}{}
+//				fallThroughFacts[nodeToProcessId] = fallThrough
+//				incomingFacts[fallThroughId][nodeToProcessId] = fallThrough
+//			}
+//		}
+//
+//		if branchOutId >= 0 {
+//			// Has BranchOut, else we can just ignore
+//			prevBranchOut := branchOutFacts[nodeToProcessId]
+//
+//			if !branchOut.Equals(prevBranchOut) {
+//				// Flow to BranchOut changed, add it to worklist
+//				worklist[branchOutId] = struct{}{}
+//				branchOutFacts[nodeToProcessId] = branchOut
+//				incomingFacts[branchOutId][nodeToProcessId] = branchOut
+//			}
+//		}
+//
+//		//preds := nodeToProcess.Parents()
+//		//inFacts := make([]Fact, 0, len(preds))
+//		//for _, pred := range preds {
+//		//	inFacts = append(inFacts, facts[pred])
+//		//}
+//		//
+//		//inFact := mergeAll(merge, inFacts, initialFlow)
+//		//fallThrough, branchOut := flow(inFact, nodeToProcess)
+//		//prevFallThrough := facts[nodeToProcess.FallThrough()]
+//		//prevBranchOut := facts[nodeToProcess.BranchOut()]
+//		//if !branchOut.Equals(prevBranchOut) {
+//		//	// Flow to BranchOut changed, add it to worklist
+//		//	worklist = append(worklist, nodeToProcess.BranchOut())
+//		//}
+//		//if !fallThrough.Equals(prevFallThrough) {
+//		//	// Flow to FallThrough changed, add it to worklist
+//		//	worklist = append(worklist, nodeToProcess.FallThrough())
+//		//}
+//		//facts[nodeToProcessId] = inFact
+//	}
+//	return facts
+//}
 
 func mergeAll(merge func(Fact, Fact) Fact, facts []Fact, initial Fact) Fact {
 	if len(facts) == 0 {

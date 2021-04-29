@@ -15,10 +15,10 @@ const (
  ... "a"  "hello"   ...    "42"    "41" ....     (Must be a specific constant)
       \      \      ...     /       /
                    Bottom                        (Uninitialized)
- */
+*/
 
 type AbsString struct {
-	Type AbsStringType
+	Type     AbsStringType
 	Constant string
 }
 
@@ -100,7 +100,7 @@ func (s *AbsString) String() string {
 	if s.IsBottom() {
 		return "<Bottom>" // "⊥" //
 	}
-	return `"`+ s.Constant +`"`
+	return `"` + s.Constant + `"`
 }
 
 func (s *AbsString) copy() *AbsString {
