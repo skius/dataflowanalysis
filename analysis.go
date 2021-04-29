@@ -1,12 +1,20 @@
 package dataflowanalysis
 
-// Node represents the dataflow CFG
+// Node represents a path-sensitive data-flow CFG
 type Node interface {
 	Label() int
 	PredsTaken() []int    // Predecessors that branch out to the current Node
 	PredsNotTaken() []int // Predecessors that fall through to the current Node
 	SuccsTaken() []int    // Successors if current Node branches out
 	SuccsNotTaken() []int // Successors if current Node falls through
+	Get() Stmt
+}
+
+// A NodePI is a Node used for path-insensitive data-flow analyses
+type NodePI interface {
+	Label() int
+	Preds() []int // Predecessors
+	Succs() []int // Successors
 	Get() Stmt
 }
 
@@ -19,39 +27,106 @@ type Fact interface {
 	String() string
 }
 
-// A branched backward flow doesn't make much sense
-func RunBackward(
-	entryIds []int, // entryIds don't make much sense I think
+// RunBackwardPI computes a path-insensitive backward data-flow analysis
+func RunBackwardPI(
 	ids []int,
-	idToNode map[int]Node,
+	idToNode map[int]NodePI,
 	merge func(Fact, Fact) Fact, // Meet operator
-	flow func(Fact, Node) (Fact, Fact), // Flow function
+	flow func(Fact, NodePI) Fact, // Flow function
+	initialFlow Fact,
+) (in, out map[int]Fact) {
+
+	idToNodeForward := make(map[int]Node, len(idToNode))
+
+	for k, v := range idToNode {
+		ps := new(piToPSWrapper)
+		ps.actualNode = v
+		rev := new(revToFwdWrapper)
+		rev.actualNode = ps
+		idToNodeForward[k] = rev
+	}
+
+	flowWrapper := func(f Fact, n Node) (Fact, Fact) {
+		actual := n.(*revToFwdWrapper).actualNode.(*piToPSWrapper).actualNode
+		res := flow(f, actual)
+
+		// No flow for Taken branches because piToPSWrapper models all branches as NotTaken
+		return res, nil
+	}
+
+	// Can ignore the Taken out map because we have no Taken branches
+	inForward, outForwardNT, _ := RunForward([]int{}, ids, idToNodeForward, merge, flowWrapper, initialFlow, initialFlow)
+
+	// The in flow at each node is the out flow of the reversed data-flow and vice-versa
+	return outForwardNT, inForward
+}
+
+// TODO: Need to think about how to model path-sensitive backward flows
+//func RunBackward(
+//	entryIds []int, // entryIds don't make much sense I think
+//	ids []int,
+//	idToNode map[int]Node,
+//	merge func(Fact, Fact) Fact, // Meet operator
+//	flow func(Fact, Node) (Fact, Fact), // Flow function
+//	initialFlow Fact,
+//	entryFlow Fact,
+//) (in, out map[int]Fact) {
+//
+//
+//	idToNodeReverse := make(map[int]Node, len(idToNode))
+//	for k, v := range idToNode {
+//		rev := new(reverseNode)
+//		rev.actualNode = v
+//		idToNodeReverse[k] = rev
+//	}
+//
+//	// Need to convert our reverse nodes into the real nodes such that the flow function is not exposed to reverseNode
+//	revFlow := func(f Fact, node Node) (Fact, Fact) {
+//		revNode := node.(*reverseNode)
+//		actualNode := revNode.actualNode
+//		return flow(f, actualNode)
+//	}
+//
+//	// ignore outTaken, because our flow is path insensitive
+//	revIn, revOutNotTaken, _ := RunForward(entryIds, ids, idToNodeReverse, merge, revFlow, initialFlow, entryFlow)
+//
+//	return revOutNotTaken, revIn
+//}
+
+// RunForwardPI computes a path-insensitive forward data-flow analysis
+func RunForwardPI(
+	entryIds []int,
+	ids []int,
+	idToNode map[int]NodePI,
+	merge func(Fact, Fact) Fact, // Meet operator
+	flow func(Fact, NodePI) Fact, // Flow function
 	initialFlow Fact,
 	entryFlow Fact,
 ) (in, out map[int]Fact) {
+	idToNodePS := make(map[int]Node, len(idToNode))
 
-
-	idToNodeReverse := make(map[int]Node, len(idToNode))
 	for k, v := range idToNode {
-		rev := new(reverseNode)
-		rev.actualNode = v
-		idToNodeReverse[k] = rev
+		ps := new(piToPSWrapper)
+		ps.actualNode = v
+		idToNodePS[k] = ps
 	}
 
-	// Need to convert our reverse nodes into the real nodes such that the flow function is not exposed to reverseNode
-	revFlow := func(f Fact, node Node) (Fact, Fact) {
-		revNode := node.(*reverseNode)
-		actualNode := revNode.actualNode
-		return flow(f, actualNode)
+	flowWrapper := func(f Fact, n Node) (Fact, Fact) {
+		actual := n.(*piToPSWrapper).actualNode
+		res := flow(f, actual)
+
+		// No flow for Taken branches because piToPSWrapper models all branches as NotTaken
+		return res, nil
 	}
 
-	// ignore outTaken, because our flow is path insensitive
-	revIn, revOutNotTaken, _ := RunForward(entryIds, ids, idToNodeReverse, merge, revFlow, initialFlow, entryFlow)
+	// Can ignore the Taken out map because we have no Taken branches
+	inPS, outPSNT, _ := RunForward(entryIds, ids, idToNodePS, merge, flowWrapper, initialFlow, entryFlow)
 
-	return revOutNotTaken, revIn
+	// The in flow at each node is the out flow of the reversed data-flow and vice-versa
+	return inPS, outPSNT
 }
 
-// RunForward computes path-sensitive forward data-flow analysis
+// RunForward computes a path-sensitive forward data-flow analysis
 func RunForward(
 	entryIds []int,
 	ids []int,
@@ -88,6 +163,7 @@ func RunForward(
 	}
 
 	for len(worklist) > 0 {
+		// Pop a node off the worklist
 		var currNodeId int
 		for k := range worklist {
 			currNodeId = k
@@ -97,7 +173,7 @@ func RunForward(
 
 		currNode := idToNode[currNodeId]
 
-		inFacts := make([]Fact, 0, len(currNode.PredsNotTaken()) + len(currNode.PredsTaken()) + 1)
+		inFacts := make([]Fact, 0, len(currNode.PredsNotTaken())+len(currNode.PredsTaken())+1)
 		for _, pred := range currNode.PredsNotTaken() {
 			inFacts = append(inFacts, outNotTaken[pred])
 		}

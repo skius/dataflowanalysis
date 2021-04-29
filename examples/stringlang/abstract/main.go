@@ -13,7 +13,6 @@ import (
 )
 import "github.com/skius/stringlang"
 
-
 type Node struct {
 	inner *cfg.Node
 }
@@ -96,7 +95,6 @@ func main() {
 	}
 
 	vars := getAllVars(prog)
-
 
 	initial := make(AbstractMap)
 	//Bottom element
