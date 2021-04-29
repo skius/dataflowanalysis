@@ -11,7 +11,7 @@ import (
 	Special Bottom element (empty map) that models unreachability
 	A Bottom *AbsString just models uninitializedness
 	So the map (\v -> Bottom) models a reachable piece of code, where no variable is initialized
- */
+*/
 
 type AbstractMap map[string]*AbsString
 
